@@ -1,0 +1,16 @@
+src/nanoread/nanoread
+src/nanowrite/nanowrite
+src/nanoclient/nanoclient
+src/nanoserver/nanoserver
+*.o
+*.so
+*.a
+
+# always generated from nnio_build.c.in
+src/lib/nnio_build.c
+
+# local build scripts
+*.sh
+
+# temporary patch
+*.patch

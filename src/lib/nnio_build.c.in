@@ -1,0 +1,14 @@
+/*
+ * nnio build information
+ *
+ * Copyright (c) 2016, Wind River Systems, Inc.
+ * All rights reserved.
+ *
+ * See "LICENSE" for license terms.
+ *
+ * Author:
+ *	  Lans Zhang <jia.zhang@windriver.com>
+ */
+
+char nnio_git_commit[] = "@@NANOIO_GIT_COMMIT@@";
+char nnio_build_machine[] = "@@NANOIO_BUILD_MACHINE@@";

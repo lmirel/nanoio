@@ -1,0 +1,6 @@
+Version 0.1.0
+=============
+Released: 2016-08-19
+
+Initial implementation providing nanoread, nanowrite, nanoclient, nanoserver
+and libnanoio.so.
