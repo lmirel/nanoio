@@ -160,7 +160,7 @@ nnio_spawn(int sock, const char *exec, void *data, unsigned int data_len)
 		execvp(argv[0], argv);
 
 		/* Should not return */
-		nnio_error_assert(0, "Error on executing subprocess");
+		nnio_error_assert(0, "Error on executing subprocess: %s", exec);
 	}
 
 	close(input_fds[0]);
