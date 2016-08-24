@@ -51,7 +51,7 @@ check_protocol(const char *name)
 int
 nnio_options_parse(int argc, char *argv[], nnio_options_t *options)
 {
-	char opts[] = "-hVvqp:t:r:n:RLl:e:E:";
+	char opts[] = "-hVvqp:t:r:n:RLl:e:E:g:d";
 	struct option long_opts[] = {
 		{ "help", no_argument, NULL, 'h' },
 		{ "version", no_argument, NULL, 'V' },
@@ -66,6 +66,8 @@ nnio_options_parse(int argc, char *argv[], nnio_options_t *options)
 		{ "local-endpoint", no_argument, NULL, 'L' },
 		{ "exit-delay", no_argument, NULL, 'e' },
 		{ "exec", required_argument, NULL, 'E' },
+		{ "log-file", required_argument, NULL, 'g' },
+		{ "daemon", no_argument, NULL, 'd' },
 		{ 0, },	/* NULL terminated */
 	};
 
@@ -130,6 +132,12 @@ nnio_options_parse(int argc, char *argv[], nnio_options_t *options)
 			break;
 		case 'E':
 			options->exec = optarg;
+			break;
+		case 'g':
+			options->log_file = optarg;
+			break;
+		case 'd':
+			options->daemon = true;
 			break;
 		case 1:
 			options->url = optarg;

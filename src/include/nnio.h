@@ -15,6 +15,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdarg.h>
 #include <ctype.h>
@@ -51,8 +52,6 @@ nnio_git_commit[];
 
 extern char
 nnio_build_machine[];
-
-typedef unsigned int		bool;
 
 #define gettid()		syscall(__NR_gettid)
 
@@ -134,6 +133,8 @@ typedef struct {
 	int exit_delay;		/* in millisecond */
 	bool quite;
 	const char *exec;
+	bool daemon;
+	const char *log_file;
 } nnio_options_t;
 
 typedef struct {
