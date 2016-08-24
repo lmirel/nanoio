@@ -27,6 +27,8 @@ show_usage(const char *prog)
 	info_cont("  --socket-name, -n: Set the socket name\n");
 	info_cont("  --local-endpoint, -L: <url> argument is local\n");
 	info_cont("  --exec, -E: Execute an executable\n");
+	info_cont("  --log-file, -g: Specify the log file\n");
+	info_cont("  --daemon, -d: Run as daemon\n");
 	info_cont("\nurl:\n");
 	info_cont("  Specify the transport\n");
 }
@@ -42,6 +44,44 @@ exit_notify(void)
 	}
 }
 
+/*
+ * Daemonlize nanoserver.
+ * - Change CWD to /.
+ * - Redirect stdin to /dev/null.
+ * - Redirect stdout and stderr to log file.
+ */
+static int
+daemonlize(nnio_options_t *options)
+{
+	if (options->daemon == true)
+		nnio_error_assert(!daemon(0, 1), "Failed to daemonlize");
+
+	if (!options->log_file)
+		return 0;
+
+	int log_fd = open(options->log_file,
+			  O_WRONLY | O_CREAT | O_APPEND,
+			  S_IRUSR | S_IWUSR | S_IRGRP);
+	nnio_error_assert(log_fd >= 0, "Failed to open log file %s",
+			  options->log_file);
+
+	int null_fd = open("/dev/null", O_RDWR);
+	nnio_error_assert(null_fd > 0, "Unable to open /dev/null");
+
+	nnio_error_assert(dup2(null_fd, STDIN_FILENO) == STDIN_FILENO,
+			  "Unable to redirect stdin to /dev/null");
+	close(null_fd);
+
+	nnio_error_assert(dup2(log_fd, STDOUT_FILENO) == STDOUT_FILENO,
+			  "Unable to redirect stdout to log file");
+	nnio_error_assert(dup2(log_fd, STDERR_FILENO) == STDERR_FILENO,
+			  "Unable to redirect stderr to log file");
+	close(log_fd);
+
+	return 0;
+}
+
+
 int
 main(int argc, char **argv)
 {
@@ -52,6 +92,8 @@ main(int argc, char **argv)
 	};
 
 	nnio_options_parse(argc, argv, &options);
+
+	daemonlize(&options);
 
 	if (!options.quite)
 		nnio_show_banner(argv[0]);
