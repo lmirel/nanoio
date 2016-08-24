@@ -86,6 +86,57 @@ construct_argv(const char *argument)
 	return argv;
 }
 
+nnio_sync_t *
+nnio_sync_init(const char *name)
+{
+	nnio_sync_t *sync;
+
+	sync = malloc(sizeof(*sync));
+	nnio_error_assert(sync, "Error on allocate nnio_sync");
+
+	const char *shm_name = name;
+	int shm_fd = shm_open(shm_name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
+	nnio_error_assert(shm_fd >= 0, "Error on creating shared memory object");
+
+	shm_unlink(shm_name);
+
+	/* Used to sync up with child process for feeding its stdin */
+	int rc = ftruncate(shm_fd, sizeof(sem_t));
+	nnio_error_assert(!rc, "Error on truncating");
+
+	sem_t *lock = mmap(NULL, sizeof(*lock), PROT_READ | PROT_WRITE,
+			   MAP_SHARED, shm_fd, 0);
+	nnio_error_assert(lock != MAP_FAILED, "Error on mmap");
+
+	rc = sem_init(lock, 1, 0);
+	nnio_error_assert(!rc, "Error on initializing semaphore");
+
+	sync->lock = lock;
+	sync->shm_fd = shm_fd;
+
+	return sync;
+}
+
+void
+nnio_sync_wait(nnio_sync_t *sync)
+{
+	sem_wait(sync->lock);
+}
+
+void
+nnio_sync_post(nnio_sync_t *sync)
+{
+	sem_post(sync->lock);
+}
+
+void
+nnio_sync_finish(nnio_sync_t *sync)
+{
+	sem_destroy(sync->lock);
+	munmap(sync->lock, sizeof(*sync));
+	close(sync->shm_fd);
+}
+
 int
 nnio_spawn(int sock, const char *exec, void *data, unsigned int data_len)
 {
@@ -102,22 +153,9 @@ nnio_spawn(int sock, const char *exec, void *data, unsigned int data_len)
 	rc = pipe(output_fds);
 	nnio_error_assert(rc >= 0, "Error on creating the pipe for output");
 
-	const char *shm_name = "__spawn__";
-	int shm_fd = shm_open(shm_name, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
-	nnio_error_assert(shm_fd >= 0, "Error on creating shared memory object");
-
-	shm_unlink(shm_name);
-
-	/* Used to sync up with child process for feeding its stdin */
-	rc = ftruncate(shm_fd, sizeof(sem_t));
-	nnio_error_assert(!rc, "Error on truncating");
-
-	sem_t *lock = mmap(NULL, sizeof(*lock), PROT_READ | PROT_WRITE,
-			   MAP_SHARED, shm_fd, 0);
-	nnio_error_assert(lock != MAP_FAILED, "Error on mmap");
-
-	rc = sem_init(lock, 1, 0);
-	nnio_error_assert(!rc, "Error on initializing semaphore");
+	const char *sync_name = "__spawn__";
+	nnio_sync_t *sync = nnio_sync_init(sync_name);
+	nnio_error_assert(sync, "Error on creating the sync object %s", sync_name);
 
 	pid_t child = fork();
 	nnio_error_assert((int)child >= 0, "Error on forking subprocess");
@@ -146,7 +184,7 @@ nnio_spawn(int sock, const char *exec, void *data, unsigned int data_len)
 		nnio_error_assert(argv, "Error on creating argv[]");
 
 		/* Unlocked by the parent after feeding stdin */
-		sem_wait(lock);
+		nnio_sync_wait(sync);
 
 		if (nnio_util_verbose()) {
 			FILE *fp = fdopen(fd, "w");
@@ -160,7 +198,7 @@ nnio_spawn(int sock, const char *exec, void *data, unsigned int data_len)
 		execvp(argv[0], argv);
 
 		/* Should not return */
-		nnio_error_assert(0, "Error on executing subprocess: %s", exec);
+		nnio_error_assert(0, "Error on executing subprocess");
 	}
 
 	close(input_fds[0]);
@@ -185,7 +223,7 @@ nnio_spawn(int sock, const char *exec, void *data, unsigned int data_len)
 	signal(SIGPIPE, SIG_DFL);
 
 	dbg("parent syncing up ...\n");
-	sem_post(lock);
+	nnio_sync_post(sync);
 
 	struct nn_iovec *iov = NULL;
 	unsigned int nr_iov = 0;
@@ -210,9 +248,7 @@ nnio_spawn(int sock, const char *exec, void *data, unsigned int data_len)
 
 	close(output_fds[0]);
 
-	sem_destroy(lock);
-	munmap(lock, sizeof(*lock));
-	close(shm_fd);
+	nnio_sync_finish(sync);
 
 	dbg("preparing to send %ld-byte to socket ...\n", total_tx_len);
 

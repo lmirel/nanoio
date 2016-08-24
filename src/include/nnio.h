@@ -136,6 +136,23 @@ typedef struct {
 	const char *exec;
 } nnio_options_t;
 
+typedef struct {
+	sem_t *lock;
+	int shm_fd;
+} nnio_sync_t;
+
+nnio_sync_t *
+nnio_sync_init(const char *name);
+
+void
+nnio_sync_wait(nnio_sync_t *sync);
+
+void
+nnio_sync_post(nnio_sync_t *sync);
+
+void
+nnio_sync_finish(nnio_sync_t *sync);
+
 void
 nnio_show_banner(const char *prog_desc);
 
