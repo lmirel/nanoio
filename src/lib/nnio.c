@@ -188,7 +188,6 @@ nnio_spawn(int sock, const char *exec, void *data, unsigned int data_len)
 
 		if (nnio_util_verbose()) {
 			FILE *fp = fdopen(fd, "w");
-
 			nnio_error_assert(fp, "Failed to open fd");
 			fprintf(fp, "child starting ...\n");
 			fflush(fp);
@@ -225,17 +224,39 @@ nnio_spawn(int sock, const char *exec, void *data, unsigned int data_len)
 	dbg("parent syncing up ...\n");
 	nnio_sync_post(sync);
 
+	wait(NULL);
+	dbg("child exited\n");
+
+	rc = fcntl(output_fds[0], F_GETFL);
+	nnio_error_assert(rc >= 0, "Error on F_GETFD for %d", output_fds[0]);
+
+	rc = fcntl(output_fds[0], F_SETFL, rc | O_NONBLOCK);
+	nnio_error_assert(!rc, "Error on F_SETFD for %d", output_fds[0]);
+
 	struct nn_iovec *iov = NULL;
 	unsigned int nr_iov = 0;
 	unsigned long total_tx_len = 0;
 	while (1) {
+		dbg("preparing to read the output pipe ...\n");
+
 		void *buf = nnio_alloc_data(PIPE_BUF);
 		nnio_error_assert(buf, "Failed to allocate buffer");
 
 		ssize_t buf_len = read(output_fds[0], buf, PIPE_BUF);
-		nnio_error_assert(buf_len >= 0, "Failed to read");
-		if (!buf_len)
-		    break;
+		if (buf_len < 0) {
+			if (errno == EAGAIN) {
+				dbg("no data available on nonblocking output "
+				    "pipe\n");
+				break;
+			}
+
+			nnio_error_assert(buf_len >= 0, "Failed to read");
+		}
+
+		if (!buf_len) {
+			dbg("output pipe EOF\n");
+			break;
+		}
 
 		iov = realloc(iov, (++nr_iov) * sizeof(*iov));
 		nnio_error_assert(iov, "Failed to allocate iov");
@@ -250,19 +271,26 @@ nnio_spawn(int sock, const char *exec, void *data, unsigned int data_len)
 
 	nnio_sync_finish(sync);
 
-	dbg("preparing to send %ld-byte to socket ...\n", total_tx_len);
+	if (total_tx_len) {
+		dbg("preparing to send %ld-byte to socket ...\n", total_tx_len);
 
-	rc = nnio_socket_tx_iov(sock, iov, nr_iov);
-	if (rc < 0) {
-		err("Failed to send %ld-byte data to socket\n",
-		    total_tx_len);
+		rc = nnio_socket_tx_iov(sock, iov, nr_iov);
+		if (rc < 0) {
+			err("Failed to send %ld-byte data to socket\n",
+			    total_tx_len);
+		}
+
+		for (unsigned int i = 0; i < nr_iov; ++i)
+			nnio_free_data(iov[i].iov_base);
+		free(iov);
+	} else {
+		/* For nanomsg socket, a nil tx can even unblock the rx side */
+		dbg("preparing to send a nil to socket ...\n");
+
+		rc = nnio_socket_tx(sock, "", 0);
+		if (rc < 0)
+			err("Failed to send nil data to socket\n");
 	}
-
-	for (unsigned int i = 0; i < nr_iov; ++i)
-		nnio_free_data(iov[i].iov_base);
-	free(iov);
-
-	wait(NULL);
 
 	return 0;
 }
