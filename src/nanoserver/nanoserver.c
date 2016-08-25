@@ -44,6 +44,28 @@ exit_notify(void)
 	}
 }
 
+static int
+run_worker(int sock, void *data, unsigned int data_len, const char *exec)
+{
+	int rc = 0;
+
+	if (exec)
+		rc = nnio_spawn(sock, exec, data, data_len);
+	else {
+		/* Do an echo service */
+		dbg("preparing to send %d-byte to socket ...\n", data_len);
+		int len = nnio_socket_tx(sock, data, data_len);
+		if (len < 0) {
+			err("Failed to send %d-byte data to socket\n", data_len);
+			rc = -1;
+		}
+	}
+
+	nnio_free_data(data);
+
+	return rc;
+}
+
 /*
  * Daemonlize nanoserver.
  * - Change CWD to /.
@@ -81,7 +103,6 @@ daemonlize(nnio_options_t *options)
 	return 0;
 }
 
-
 int
 main(int argc, char **argv)
 {
@@ -106,56 +127,43 @@ main(int argc, char **argv)
 
 	nnio_error_assert(options.local_endpoint, "-L option required");
 
-	int rc;
+	int rc = 0;
 	int ep = nnio_endpoint_add_local(sock, *options.local_endpoint);
 	if (ep < 0) {
 		rc = -1;
 		goto err_add_endpoint;
 	}
 
-run_again:
-	dbg("preparing to receive data from socket ...\n");
+	while (1) {
+		dbg("preparing to receive data from socket ...\n");
 
-	void *data;
-	unsigned int data_len;
-	rc = nnio_socket_rx(sock, &data, &data_len);
-	if (rc < 0) {
-		dbg("Failed to receive data from socket\n");
-		goto err_socket_rx;
-	}
-
-	rc = 0;
-
-	if (!data_len) {
-		if (nnio_util_verbose())
-			info("read socket EOF\n");
-
-		goto err_eof;
-	}
-
-	dbg("reading %d-byte from socket ... \n", data_len);
-
-	if (options.exec) {
-		rc = nnio_spawn(sock, options.exec, data, data_len);
-		if (!rc) {
-			nnio_free_data(data);
-			goto run_again;
+		void *data;
+		unsigned int data_len;
+		rc = nnio_socket_rx(sock, &data, &data_len);
+		if (rc < 0) {
+			dbg("Failed to receive data from socket\n");
+			goto err_socket_rx;
 		}
 
-		goto err_eof;
-	}
+		rc = 0;
 
-	/* Do an echo service */
-	dbg("preparing to send %d-byte to socket ...\n", data_len);
+		if (!data_len) {
+			if (nnio_util_verbose())
+				info("read socket EOF\n");
 
-	int len = nnio_socket_tx(sock, data, data_len);
-	if (len < 0) {
-		err("Failed to send %d-byte data to socket\n", data_len);
-		rc = -1;
-	}
+			goto err_eof;
+		}
 
+		dbg("reading %d-byte from socket ...\n", data_len);
+
+		rc = run_worker(sock, data, data_len, options.exec);
+		if (rc) {
 err_eof:
-	nnio_free_data(data);
+			dbg("preparing to exit due to failure ...\n");
+			nnio_free_data(data);
+			break;
+		}
+	}
 
 err_socket_rx:
 	/* If the tx socket is closed before the sent data received, the rx
