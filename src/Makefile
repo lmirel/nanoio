@@ -6,4 +6,4 @@ SUBDIRS := lib nanowrite nanoread nanoclient nanoserver
 .PHONE: all clean install
 
 all clean install:
-	@for x in $(SUBDIRS); do $(MAKE) -C $$x $@; done
+	@for x in $(SUBDIRS); do $(MAKE) -C $$x $@ || exit $?; done
