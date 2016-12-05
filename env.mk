@@ -20,7 +20,7 @@ nanomsg_libdir ?= $(libdir)
 
 LDFLAGS := --warn-common --no-undefined --fatal-warnings \
 	   $(patsubst $(join -Wl,,)%,%,$(EXTRA_LDFLAGS))
-CFLAGS := -D_GNU_SOURCE -std=c99 -O2 -Wall -Werror \
+CFLAGS := -D_GNU_SOURCE -std=c99 -O2 -Wall -Werror -Werror=format=0 \
 	  $(addprefix -I, $(TOPDIR)/src/include $(nanomsg_includedir)) \
 	  -L$(nanomsg_libdir) -lnanomsg -lpthread -lrt \
 	  $(EXTRA_CFLAGS) $(addprefix $(join -Wl,,),$(LDFLAGS))
